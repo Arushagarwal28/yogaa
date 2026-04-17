@@ -1,0 +1,73 @@
+# =========================
+# 🔒 ENV FILES
+# =========================
+.env
+server/.env
+client/.env
+.env.*
+!.env.example
+
+# =========================
+# 📦 NODE MODULES
+# =========================
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# =========================
+# 🏗 BUILD OUTPUT
+# =========================
+client/dist/
+dist/
+build/
+
+# =========================
+# ⚙️ LOG FILES
+# =========================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# 🧠 CACHE / TEMP
+# =========================
+.cache/
+.tmp/
+.temp/
+*.cache
+
+# =========================
+# 💻 OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🧑‍💻 EDITOR / IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# ⚡ VITE / FRONTEND
+# =========================
+client/.vite/
+
+# =========================
+# 🚀 SERVER SPECIFIC
+# =========================
+server/uploads/
+server/tmp/
+
+# =========================
+# 🔐 KEYS / SECRETS
+# =========================
+*.pem
+*.key
+
+# =========================
+# 📊 MISC
+# =========================
+*.tsbuildinfo
