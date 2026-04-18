@@ -79,7 +79,7 @@ function LiveCamera({ poseId, onScore, onFeedback }) {
 }
 
 export default function YogaPage({ addCoins }) {
-  const { user }                        = useAuth();
+  const { user, refreshCoins }           = useAuth();
   const [selectedPose, setSelectedPose] = useState(null);
   const [isActive,     setIsActive]     = useState(false);
   const [search,       setSearch]       = useState("");
@@ -110,11 +110,11 @@ export default function YogaPage({ addCoins }) {
       const angles  = LiveCamera.getAngles?.() || {};
       const apiName = POSE_API_NAME[selectedPose.id] || selectedPose.name;
       const result  = await poseApi.evaluate(apiName, angles, elapsed);
-      setApiResult(result); addCoins?.(result.coinsEarned || 0);
+      setApiResult(result); addCoins?.(result.coinsEarned || 0); refreshCoins?.();
       if (result.feedback?.length) setLiveFeedback(result.feedback.map((f) => ({ joint: f.joint.replace(/_/g," "), status: f.status, message: f.message, angleDiff: f.diff || 0 })));
     } catch {
       const earned = liveScore > 90 ? 10 : liveScore > 75 ? 6 : 3;
-      addCoins?.(earned); setApiResult({ score: liveScore, coinsEarned: earned, status: "local" });
+      addCoins?.(earned); setApiResult({ score: liveScore, coinsEarned: earned, status: "local" }); refreshCoins?.();
     } finally { setSubmitting(false); }
   };
 
