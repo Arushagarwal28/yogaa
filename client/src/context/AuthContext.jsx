@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [coins,   setCoins]   = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // Restore session on page load
   useEffect(() => {
     const token = getToken();
     if (!token) { setLoading(false); return; }
@@ -27,6 +28,7 @@ export function AuthProvider({ children }) {
     saveToken(token); setUser(u); setCoins(u.coins ?? 0);
   };
 
+  // Used by demo/guest login — reads actual coins from userData, no hardcoded value
   const loginWithData = (userData) => {
     setUser(userData);
     setCoins(userData.coins ?? 0);
@@ -34,18 +36,18 @@ export function AuthProvider({ children }) {
 
   const logout = () => { clearToken(); setUser(null); setCoins(0); };
 
-  // Optimistic local increment (used right after earning coins in YogaPage)
+  // Optimistic increment — called immediately when a session ends so the UI feels instant
   const addCoins = (n) => setCoins((c) => c + n);
 
-  // Re-fetch the live coin balance from the server — call after any session ends
+  // Re-fetch the authoritative coin count from the server.
+  // Call this after endSession to correct any drift between optimistic state and DB.
   const refreshCoins = useCallback(async () => {
     try {
       const { user: u } = await authApi.me();
       setCoins(u.coins ?? 0);
-      // Also keep user object in sync (name, role, etc. unchanged but coins updated)
-      setUser((prev) => prev ? { ...prev, coins: u.coins } : prev);
+      setUser((prev) => (prev ? { ...prev, coins: u.coins ?? 0 } : prev));
     } catch {
-      // silently ignore — the optimistic addCoins value is still shown
+      // Non-critical — the optimistic value from addCoins is still shown
     }
   }, []);
 

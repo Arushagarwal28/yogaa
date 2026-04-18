@@ -44,3 +44,62 @@ body { font-family: "DM Sans", "Nunito", system-ui, sans-serif; }
 }
 .modal-overlay { animation: fadeInOverlay .25s ease; }
 .modal-box     { animation: slideUpModal .3s cubic-bezier(.22,1,.36,1); }
+
+/* ── Layout shell ─────────────────────────────────────────────────────────── */
+/*
+  The layout uses a CSS variable --sidebar-w that is set by JS on the #app-shell
+  element. Everything (sidebar width, content margin, nav left) reads from it.
+  This is the only reliable cross-browser way to animate a layout shift without
+  inline-style vs media-query specificity wars.
+*/
+#app-shell {
+  --sidebar-w: 256px;
+}
+#app-shell.sidebar-collapsed {
+  --sidebar-w: 0px;
+}
+
+.layout-sidebar {
+  width: 256px; /* always 256px wide */
+  transform: translateX(0);
+  transition: transform 0.28s ease-in-out;
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  z-index: 40;
+  background: white;
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#app-shell.sidebar-collapsed .layout-sidebar {
+  transform: translateX(-256px);
+}
+
+.layout-content {
+  margin-left: 256px;
+  transition: margin-left 0.28s ease-in-out;
+  min-height: 100vh;
+}
+#app-shell.sidebar-collapsed .layout-content {
+  margin-left: 0;
+}
+
+.layout-nav {
+  position: fixed;
+  top: 0; right: 0;
+  left: 256px;
+  height: 64px;
+  z-index: 30;
+  transition: left 0.28s ease-in-out;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+}
+#app-shell.sidebar-collapsed .layout-nav {
+  left: 0;
+}

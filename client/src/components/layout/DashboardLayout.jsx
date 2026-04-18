@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth }      from "../../context/AuthContext.jsx";
 import Sidebar          from "./Sidebar.jsx";
 import DashboardNav     from "./DashboardNav.jsx";
@@ -20,38 +20,75 @@ const USER_PAGES = {
   store:        (p) => <StorePage        {...p} />,
   analytics:    ()  => <AnalyticsPage    />,
   subscription: ()  => <SubscriptionPage />,
-  profile:      (p) => <ProfilePage      {...p} />,
+  profile:      ()  => <ProfilePage      />,
   help:         ()  => <HelpPage         />,
   contact:      ()  => <ContactPage      />,
 };
+
 const SHOP_PAGES = {
   "shop-dashboard": () => <ShopDashboard />,
   "shop-products":  () => <ShopDashboard />,
-  "shop-orders":    () => <div className="text-center py-20 text-gray-400"><div className="text-5xl mb-4">📋</div><p>Order management coming soon</p></div>,
-  analytics:        () => <AnalyticsPage />,
-  profile:         (p) => <ProfilePage {...p} />,
+  "shop-orders":    () => (
+    <div className="text-center py-20 text-gray-400">
+      <div className="text-5xl mb-4">📋</div>
+      <p>Order management coming soon</p>
+    </div>
+  ),
+  analytics: ()  => <AnalyticsPage />,
+  profile:   ()  => <ProfilePage  />,
 };
 
 export default function DashboardLayout() {
-  const { user, coins, addCoins, logout } = useAuth();
+  const { user, coins, addCoins, refreshCoins, logout } = useAuth();
+
   const defaultPage = user?.role === "shop" ? "shop-dashboard" : "dashboard";
-  const [page,        setPage]        = useState(defaultPage);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [page,    setPage]    = useState(defaultPage);
+  const [isOpen,  setIsOpen]  = useState(true); // sidebar visible by default
+
+  // Add/remove "sidebar-collapsed" on the root #app-shell element.
+  // index.css reads this class to drive ALL the transitions — sidebar,
+  // content margin, and nav left — in perfect sync, no JS delay.
+  useEffect(() => {
+    const shell = document.getElementById("app-shell");
+    if (!shell) return;
+    if (isOpen) shell.classList.remove("sidebar-collapsed");
+    else        shell.classList.add("sidebar-collapsed");
+  }, [isOpen]);
+
+  const toggle = () => setIsOpen(o => !o);
 
   const pageMap = user?.role === "shop" ? SHOP_PAGES : USER_PAGES;
   const render  = pageMap[page] ?? pageMap[Object.keys(pageMap)[0]];
-  const props   = { user, coins, addCoins, setPage };
+  const props   = { user, coins, addCoins, refreshCoins, setPage };
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
-      <Sidebar active={page} setActive={setPage} role={user?.role} sidebarOpen={sidebarOpen} />
-      <div className="lg:ml-64">
-        <DashboardNav user={user} coins={coins} setPage={setPage} setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} onLogout={logout} />
-        <main className="pt-16 min-h-screen">
-          <div className="p-6 max-w-7xl mx-auto">{render(props)}</div>
+    <div id="app-shell" className="min-h-screen bg-gray-50/50">
+
+      <Sidebar
+        active={page}
+        setActive={setPage}
+        role={user?.role}
+        isOpen={isOpen}
+        toggle={toggle}
+      />
+
+      {/* Content area — margin-left driven by CSS class on #app-shell */}
+      <div className="layout-content">
+        <DashboardNav
+          user={user}
+          coins={coins}
+          setPage={setPage}
+          toggle={toggle}
+          isOpen={isOpen}
+          onLogout={logout}
+        />
+        <main style={{ paddingTop: 64, minHeight: "100vh" }}>
+          <div className="p-6 max-w-7xl mx-auto">
+            {render(props)}
+          </div>
         </main>
       </div>
-      {sidebarOpen && <div className="fixed inset-0 bg-black/20 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+
     </div>
   );
 }
