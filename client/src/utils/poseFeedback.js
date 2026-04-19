@@ -1,22 +1,30 @@
-export function generateFeedback(feedback) {
-  const messages = [];
-  const checks = {
-    leftKnee:      ["red",    "Straighten your left leg"],
-    rightKnee:     ["red",    "Straighten your right leg"],
-    leftElbow:     ["red",    "Keep your left arm straight"],
-    rightElbow:    ["red",    "Keep your right arm straight"],
-    leftShoulder:  ["red",    "Align your left shoulder"],
-    rightShoulder: ["red",    "Align your right shoulder"],
-    spine:         ["red",    "Keep your back straight"],
-    standingLeg:   ["red",    "Lock your standing knee"],
-    raisedLeg:     ["red",    "Raise your foot higher on the thigh"],
-    leftArm:       ["yellow", "Extend your left arm fully"],
-    rightArm:      ["yellow", "Extend your right arm fully"],
-    torso:         ["red",    "Tilt your torso more to the side"],
-  };
-  Object.entries(checks).forEach(([joint, [threshold, msg]]) => {
-    if (feedback[joint] === threshold) messages.push(msg);
-  });
-  if (messages.length === 0) messages.push("Perfect posture! Hold this position.");
-  return messages;
+import { getHints } from "./poseEvaluators.js";
+
+/**
+ * generateFeedback(feedback, poseName)
+ *
+ * Returns an array of feedback message strings for the FeedbackPanel.
+ * Uses the hint messages from POSE_DEFS so every pose gets specific,
+ * accurate cues instead of generic messages.
+ */
+export function generateFeedback(feedback, poseName) {
+  const hints = getHints(feedback, poseName);
+  // Return just the hint strings (for backward compatibility with existing callers)
+  return hints.map(h => h.hint);
+}
+
+/**
+ * generateDetailedFeedback(feedback, poseName)
+ *
+ * Returns structured feedback objects for FeedbackPanel with joint name,
+ * status, message, and grade — used by the live camera overlay.
+ */
+export function generateDetailedFeedback(feedback, poseName) {
+  const hints = getHints(feedback, poseName);
+  return hints.map(({ joint, grade, hint }) => ({
+    joint:    joint.replace(/([A-Z])/g, " $1").trim(),
+    status:   grade,
+    message:  hint,
+    angleDiff: 0,
+  }));
 }

@@ -7,14 +7,31 @@ import FeedbackPanel from "../components/yoga/FeedbackPanel.jsx";
 import { useSessionTimer }   from "../hooks/useSessionTimer.js";
 import { poseApi }           from "../utils/api.js";
 import { useAuth }           from "../context/AuthContext.jsx";
-import { evaluateTadasana, evaluateVrikshasana, evaluateTrikonasana, calculateScore, JOINT_INDEX } from "../utils/poseEvaluators.js";
-import { generateFeedback }  from "../utils/poseFeedback.js";
+import {
+  evaluateTadasana, evaluateVrikshasana, evaluateTrikonasana,
+  evaluateBhujangasana, evaluateUtkatasana, evaluateVirabhadrasana,
+  evaluateAdhaMukha, evaluateBalasana, evaluateSetuBandhasana,
+  evaluatePaschimottanasana,
+  calculateScore, JOINT_INDEX, extractAngles,
+} from "../utils/poseEvaluators.js";
+import { generateFeedback, generateDetailedFeedback } from "../utils/poseFeedback.js";
 import { YOGA_POSES }        from "../data/poses.js";
 import { Pose }              from "@mediapipe/pose";
 import { Camera }            from "@mediapipe/camera_utils";
 import { drawSkeleton, drawJointDot } from "../components/yoga/SkeletonRenderer.js";
 
-const FRONTEND_EVALUATORS = { 1: evaluateTadasana, 3: evaluateVrikshasana, 4: evaluateTrikonasana };
+const FRONTEND_EVALUATORS = {
+  1:  evaluateTadasana,
+  2:  evaluateBhujangasana,
+  3:  evaluateVrikshasana,
+  4:  evaluateTrikonasana,
+  5:  evaluateAdhaMukha,
+  6:  evaluateSetuBandhasana,
+  7:  evaluateBalasana,
+  8:  evaluateUtkatasana,
+  9:  evaluateVirabhadrasana,
+  10: evaluatePaschimottanasana,
+};
 const POSE_API_NAME = { 1:"Tadasana", 2:"Bhujangasana", 3:"Vrikshasana", 4:"Trikonasana", 5:"Adho_Mukha", 6:"Setu_Bandhasana", 7:"Balasana", 8:"Utkatasana", 9:"Virabhadrasana", 10:"Paschimottanasana" };
 
 function calcAngleFromLM(lm, ai, bi, ci) {
@@ -53,9 +70,11 @@ function LiveCamera({ poseId, onScore, onFeedback }) {
     drawSkeleton(ctx, lm, W, H);
     const evaluator = FRONTEND_EVALUATORS[poseId];
     if (!evaluator) return;
+    const poseName = POSE_API_NAME[poseId] || "Tadasana";
     const feedback = evaluator(lm);
-    const score    = calculateScore(feedback);
-    const messages = generateFeedback(feedback);
+    const score    = calculateScore(feedback, poseName);
+    const messages = generateFeedback(feedback, poseName);
+    const detailedFB = generateDetailedFeedback(feedback, poseName);
     Object.entries(feedback).forEach(([joint, color]) => { const idx = JOINT_INDEX[joint]; if (idx != null) drawJointDot(ctx, lm[idx], color, W, H); });
     const now = Date.now(); const delta = (now - lastTRef.current) / 1000; lastTRef.current = now;
     holdRef.current = score > 80 ? holdRef.current + delta : 0;
@@ -63,8 +82,8 @@ function LiveCamera({ poseId, onScore, onFeedback }) {
     ctx.fillStyle="#4ade80"; ctx.font="bold 14px monospace"; ctx.fillText(`⚡ Score: ${score}%`,22,30);
     ctx.fillStyle="#cbd5e1"; ctx.font="12px monospace"; ctx.fillText(`Hold: ${holdRef.current.toFixed(1)}s`,22,52);
     if(holdRef.current>=10){ctx.fillStyle="#00FFAA";ctx.font="bold 20px Arial";ctx.fillText("✓ Pose Complete!",W/2-90,38);}
-    anglesRef.current = { left_knee:calcAngleFromLM(lm,23,25,27), right_knee:calcAngleFromLM(lm,24,26,28), left_elbow:calcAngleFromLM(lm,11,13,15), right_elbow:calcAngleFromLM(lm,12,14,16), left_shoulder:calcAngleFromLM(lm,13,11,23), right_shoulder:calcAngleFromLM(lm,14,12,24), spine:calcAngleFromLM(lm,11,23,25) };
-    onScore?.(score); onFeedback?.(feedback, messages);
+    anglesRef.current = extractAngles(lm);
+    onScore?.(score); onFeedback?.(feedback, messages, detailedFB);
   }
   LiveCamera.getAngles = () => anglesRef.current;
   return (
@@ -79,7 +98,7 @@ function LiveCamera({ poseId, onScore, onFeedback }) {
 }
 
 export default function YogaPage({ addCoins }) {
-  const { user, refreshCoins }           = useAuth();
+  const { user }                        = useAuth();
   const [selectedPose, setSelectedPose] = useState(null);
   const [isActive,     setIsActive]     = useState(false);
   const [search,       setSearch]       = useState("");
@@ -96,12 +115,8 @@ export default function YogaPage({ addCoins }) {
       && (filter === "all" || p.difficulty.toLowerCase() === filter);
   });
 
-  const handleFeedback = (fbObj, messages) => {
-    setLiveFeedback(Object.entries(fbObj).map(([joint, status]) => ({
-      joint: joint.replace(/([A-Z])/g, " $1").trim(), status,
-      message: messages.find((m) => m.toLowerCase().includes(joint.replace(/([A-Z])/g," $1").trim().toLowerCase())) || (status === "green" ? "Good position ✓" : "Needs adjustment"),
-      angleDiff: 0,
-    })));
+  const handleFeedback = (_fbObj, _messages, detailedFB) => {
+    if (detailedFB?.length) setLiveFeedback(detailedFB);
   };
 
   const endSession = async () => {
@@ -110,11 +125,11 @@ export default function YogaPage({ addCoins }) {
       const angles  = LiveCamera.getAngles?.() || {};
       const apiName = POSE_API_NAME[selectedPose.id] || selectedPose.name;
       const result  = await poseApi.evaluate(apiName, angles, elapsed);
-      setApiResult(result); addCoins?.(result.coinsEarned || 0); refreshCoins?.();
+      setApiResult(result); addCoins?.(result.coinsEarned || 0);
       if (result.feedback?.length) setLiveFeedback(result.feedback.map((f) => ({ joint: f.joint.replace(/_/g," "), status: f.status, message: f.message, angleDiff: f.diff || 0 })));
     } catch {
       const earned = liveScore > 90 ? 10 : liveScore > 75 ? 6 : 3;
-      addCoins?.(earned); setApiResult({ score: liveScore, coinsEarned: earned, status: "local" }); refreshCoins?.();
+      addCoins?.(earned); setApiResult({ score: liveScore, coinsEarned: earned, status: "local" });
     } finally { setSubmitting(false); }
   };
 
