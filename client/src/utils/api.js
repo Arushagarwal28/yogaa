@@ -31,6 +31,12 @@ export const sessionApi = {
   getAnalytics: () => get("/sessions/analytics"),
 };
 
+// Saves a completed meditation session so it contributes to streak + analytics
+export const meditationApi = {
+  save: ({ category, duration }) =>
+    post("/sessions/meditation", { category, duration }),
+};
+
 export const saveToken  = (t) => localStorage.setItem("yogaai_token", t);
 export const clearToken = ()  => localStorage.removeItem("yogaai_token");
 export const getToken   = ()  => localStorage.getItem("yogaai_token");
