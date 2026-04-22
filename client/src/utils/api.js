@@ -6,7 +6,13 @@ async function request(method, path, body = null) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res  = await fetch(`${BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const err = new Error(data.message || `HTTP ${res.status}`); err.status = res.status; throw err; }
+  if (!res.ok) {
+    const err = new Error(data.message || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.code   = data.code;   // e.g. "EMAIL_NOT_VERIFIED"
+    err.email  = data.email;  // echoed back on 403 so AuthModal can redirect to OTP step
+    throw err;
+  }
   return data;
 }
 
@@ -14,9 +20,11 @@ const get  = (path)       => request("GET",  path);
 const post = (path, body) => request("POST", path, body);
 
 export const authApi = {
-  register: (name, email, password, role) => post("/auth/register", { name, email, password, role }),
-  login:    (email, password)             => post("/auth/login",    { email, password }),
-  me:       ()                            => get("/auth/me"),
+  register:    (name, email, password, role) => post("/auth/register",     { name, email, password, role }),
+  verifyEmail: (email, otp)                  => post("/auth/verify-email", { email, otp }),
+  resendOtp:   (email)                       => post("/auth/resend-otp",   { email }),
+  login:       (email, password)             => post("/auth/login",        { email, password }),
+  me:          ()                            => get("/auth/me"),
 };
 
 export const poseApi = {
@@ -31,10 +39,8 @@ export const sessionApi = {
   getAnalytics: () => get("/sessions/analytics"),
 };
 
-// Saves a completed meditation session so it contributes to streak + analytics
 export const meditationApi = {
-  save: ({ category, duration }) =>
-    post("/sessions/meditation", { category, duration }),
+  save: ({ category, duration }) => post("/sessions/meditation", { category, duration }),
 };
 
 export const saveToken  = (t) => localStorage.setItem("yogaai_token", t);
