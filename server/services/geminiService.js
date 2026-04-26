@@ -70,13 +70,11 @@ ${problemSection}
 TONE INSTRUCTION:
 ${toneInstruction}
 
-FORMAT RULES (strict):
-- Write exactly 3-4 complete sentences. Stop after the 4th sentence — do not continue.
-- No markdown, no bullet points, no headers, no asterisks.
-- Do NOT start with "That was", "Great", "Well done", or any generic opener if the score is below 50.
-- Name joints by their plain English name (e.g. "left shoulder", "right knee") — not camelCase.
-- End with one single actionable correction or tip.
-- Your entire response must be under 80 words.`;
+FORMAT RULES:
+- Write exactly 3 short sentences. End after the third sentence with a full stop.
+- Plain text only. No markdown, no bullets, no asterisks, no colons introducing lists.
+- Name body parts in plain English (left knee, right shoulder). No camelCase.
+- Do NOT start with "That was", "Great", or any generic opener if score is below 50.`;
 }
 
 /**
@@ -102,8 +100,9 @@ async function generateAIFeedback(sessionData) {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature:     0.4,
-          maxOutputTokens: 600,   // 3-4 sentences safely fits in 600 tokens
+          maxOutputTokens: 1024,
           topP:            0.85,
+          stopSequences:   [],
         },
       }),
       signal: AbortSignal.timeout(8000),
@@ -126,11 +125,26 @@ async function generateAIFeedback(sessionData) {
     }
 
     // Strip any accidental markdown
-    return text
+    const cleaned = text
       .replace(/\*\*/g, "")
       .replace(/\*/g, "")
       .replace(/^#+\s*/gm, "")
       .trim();
+
+    // Safety net: if Gemini was still cut off mid-sentence, trim to last full stop
+    if (!/[.!?]$/.test(cleaned)) {
+      const lastStop = Math.max(
+        cleaned.lastIndexOf("."),
+        cleaned.lastIndexOf("!"),
+        cleaned.lastIndexOf("?"),
+      );
+      if (lastStop > 0) {
+        console.warn("[Gemini] Trimming truncated response to last complete sentence");
+        return cleaned.slice(0, lastStop + 1);
+      }
+    }
+
+    return cleaned;
 
   } catch (err) {
     console.error("[Gemini] Error:", err.message);

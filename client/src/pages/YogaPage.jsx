@@ -314,12 +314,20 @@ export default function YogaPage({ addCoins, refreshCoins }) {
   const [apiResult,         setApiResult]         = useState(null);
   const [submitting,        setSubmitting]        = useState(false);
   const [aiFeedbackLoading, setAiFeedbackLoading] = useState(false);
-  const [lastAttempt,       setLastAttempt]       = useState(null); // {score, date} of prev session on this pose
+  const [lastAttempt,       setLastAttempt]       = useState(null);
+  const [voiceOn,           setVoiceOn]           = useState(true);  // speaker toggle
+  const spokenAtRef = useRef({});  // { jointName: timestamp } — 8s debounce per joint
 
   const { elapsed, fmt } = useSessionTimer(isActive);
   const { step: cdStep, running: cdRunning, start: startCd, cancel: cancelCd } = useCountdown();
 
-  // ── Fetch last attempt for this pose (for delta display) ────────────
+  // Stop any ongoing speech when voice is toggled off or session ends
+  useEffect(() => {
+    if (!voiceOn || !isActive) {
+      window.speechSynthesis?.cancel();
+      if (!isActive) spokenAtRef.current = {}; // reset debounce on session end
+    }
+  }, [voiceOn, isActive]);
   useEffect(() => {
     if (!selectedPose) return;
     setLastAttempt(null);
@@ -344,10 +352,34 @@ export default function YogaPage({ addCoins, refreshCoins }) {
     );
   });
 
+  // ── Voice guidance (Web Speech TTS) ────────────────────────────────
+  // Speaks the hint text for a joint when it turns red.
+  // 8-second debounce per joint so it never spam-speaks.
+  // Only speaks the hint text — no angle numbers, no jargon.
+  const speakHint = useCallback((jointName, hintText) => {
+    if (!voiceOn) return;
+    if (!window.speechSynthesis) return;
+    const now  = Date.now();
+    const last = spokenAtRef.current[jointName] || 0;
+    if (now - last < 8000) return;                     // still within debounce window
+    spokenAtRef.current[jointName] = now;
+    window.speechSynthesis.cancel();                   // interrupt any ongoing speech
+    const utt  = new SpeechSynthesisUtterance(hintText);
+    utt.lang   = "en-US";
+    utt.rate   = 0.92;                                 // slightly slower — easier to follow
+    utt.pitch  = 1;
+    window.speechSynthesis.speak(utt);
+  }, [voiceOn]);
+
   // ── Feedback handler ────────────────────────────────────────────────
-  const handleFeedback = (_fbObj, _messages, detailedFB) => {
-    if (detailedFB?.length) setLiveFeedback(detailedFB);
-  };
+  const handleFeedback = useCallback((_fbObj, _messages, detailedFB) => {
+    if (!detailedFB?.length) return;
+    setLiveFeedback(detailedFB);
+    // Speak only red joints — yellow is close enough, no need to interrupt
+    detailedFB
+      .filter((f) => f.status === "red")
+      .forEach((f) => speakHint(f.joint, f.message));
+  }, [speakHint]);
 
   // ── Start flow ──────────────────────────────────────────────────────
   // 1. Turn camera on immediately so it warms up and user sees themselves
@@ -683,16 +715,31 @@ export default function YogaPage({ addCoins, refreshCoins }) {
         <GlassCard className="overflow-hidden">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between">
             <span className="font-semibold text-gray-700 text-sm">📷 Camera View</span>
-            {isActive && (
-              <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /> LIVE
-              </span>
-            )}
-            {cdRunning && (
-              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-semibold">
-                GET READY
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Voice toggle — always visible so user can turn off anytime */}
+              <button
+                onClick={() => setVoiceOn((v) => !v)}
+                title={voiceOn ? "Voice guidance ON — click to mute" : "Voice guidance OFF — click to enable"}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${
+                  voiceOn
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                }`}
+              >
+                <span className="text-sm">{voiceOn ? "🔊" : "🔇"}</span>
+                {voiceOn ? "Voice ON" : "Voice OFF"}
+              </button>
+              {isActive && (
+                <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /> LIVE
+                </span>
+              )}
+              {cdRunning && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-semibold">
+                  GET READY
+                </span>
+              )}
+            </div>
           </div>
           <div className="relative bg-gray-900 aspect-video flex items-center justify-center">
             {cameraOn ? (
