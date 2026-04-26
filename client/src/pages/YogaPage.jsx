@@ -309,10 +309,11 @@ export default function YogaPage({ addCoins, refreshCoins }) {
   // cameraOn = true as soon as user clicks Start (camera warms up during countdown)
   const [cameraOn,     setCameraOn]     = useState(false);
 
-  const [liveScore,    setLiveScore]    = useState(0);
-  const [liveFeedback, setLiveFeedback] = useState([]);
-  const [apiResult,    setApiResult]    = useState(null);
-  const [submitting,   setSubmitting]   = useState(false);
+  const [liveScore,         setLiveScore]         = useState(0);
+  const [liveFeedback,      setLiveFeedback]      = useState([]);
+  const [apiResult,         setApiResult]         = useState(null);
+  const [submitting,        setSubmitting]        = useState(false);
+  const [aiFeedbackLoading, setAiFeedbackLoading] = useState(false);
 
   const { elapsed, fmt } = useSessionTimer(isActive);
   const { step: cdStep, running: cdRunning, start: startCd, cancel: cancelCd } = useCountdown();
@@ -353,13 +354,17 @@ export default function YogaPage({ addCoins, refreshCoins }) {
     setCameraOn(false);
     cancelCd();
     setSubmitting(true);
+    setAiFeedbackLoading(true);
     try {
       const angles  = LiveCamera.getAngles?.() || {};
       const apiName = POSE_API_NAME[selectedPose.id] || selectedPose.name;
       const result  = await poseApi.evaluate(apiName, angles, elapsed);
+
+      // Show score immediately — AI text may still be loading
       setApiResult(result);
       addCoins?.(result.coinsEarned || 0);
       refreshCoins?.();
+
       if (result.feedback?.length) {
         setLiveFeedback(result.feedback.map((f) => ({
           joint:     f.joint.replace(/_/g, " "),
@@ -368,12 +373,16 @@ export default function YogaPage({ addCoins, refreshCoins }) {
           angleDiff: f.diff || 0,
         })));
       }
+
+      // aiFeedback arrives in the same response (server awaits Gemini)
+      // aiFeedbackLoading can be set false here since we already have it
     } catch {
       const earned = liveScore > 90 ? 10 : liveScore > 75 ? 6 : 3;
       addCoins?.(earned);
-      setApiResult({ score: liveScore, coinsEarned: earned, status: "local" });
+      setApiResult({ score: liveScore, coinsEarned: earned, status: "local", aiFeedback: null });
     } finally {
       setSubmitting(false);
+      setAiFeedbackLoading(false);
     }
   };
 
@@ -385,6 +394,7 @@ export default function YogaPage({ addCoins, refreshCoins }) {
     cancelCd();
     setApiResult(null);
     setLiveFeedback([]);
+    setAiFeedbackLoading(false);
   };
 
   // ─── Pose list page ─────────────────────────────────────────────────
@@ -488,29 +498,65 @@ export default function YogaPage({ addCoins, refreshCoins }) {
         </div>
       </div>
 
-      {/* Result banner */}
+      {/* Result banner + AI coaching */}
       {apiResult && !sessionRunning && (
-        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-6 text-white flex items-center gap-6 flex-wrap">
-          <div className="text-center">
-            <div className="text-5xl font-black">{apiResult.score}%</div>
-            <div className="text-emerald-100 text-sm mt-1">Final Score</div>
-          </div>
-          <div className="flex-1 min-w-[160px]">
-            <div className="text-xl font-bold mb-1">
-              {apiResult.status === "excellent" ? "🏆 Excellent!" :
-               apiResult.status === "good"      ? "👍 Good work!" :
-               apiResult.status === "fair"      ? "👌 Keep practising!" : "💪 Keep going!"}
+        <div className="space-y-3">
+          {/* Score row */}
+          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-6 text-white flex items-center gap-6 flex-wrap">
+            <div className="text-center">
+              <div className="text-5xl font-black">{apiResult.score}%</div>
+              <div className="text-emerald-100 text-sm mt-1">Final Score</div>
             </div>
-            <div className="text-emerald-100 text-sm">
-              Duration: {Math.floor(elapsed / 60)}m {elapsed % 60}s · Coins earned: +{apiResult.coinsEarned} 🪙
+            <div className="flex-1 min-w-[160px]">
+              <div className="text-xl font-bold mb-1">
+                {apiResult.status === "excellent" ? "🏆 Excellent!" :
+                 apiResult.status === "good"      ? "👍 Good work!" :
+                 apiResult.status === "fair"      ? "👌 Keep practising!" : "💪 Keep going!"}
+              </div>
+              <div className="text-emerald-100 text-sm">
+                Duration: {Math.floor(elapsed / 60)}m {elapsed % 60}s · Coins earned: +{apiResult.coinsEarned} 🪙
+              </div>
             </div>
+            <Btn
+              onClick={() => { setApiResult(null); setLiveFeedback([]); setAiFeedbackLoading(false); }}
+              className="bg-white !text-emerald-700 hover:bg-emerald-50 !shadow-none font-bold whitespace-nowrap"
+            >
+              Try Again
+            </Btn>
           </div>
-          <Btn
-            onClick={() => { setApiResult(null); setLiveFeedback([]); }}
-            className="bg-white !text-emerald-700 hover:bg-emerald-50 !shadow-none font-bold whitespace-nowrap"
-          >
-            Try Again
-          </Btn>
+
+          {/* AI Coaching card */}
+          <div className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🤖</span>
+              <span className="font-bold text-gray-800 text-sm">AI Coach Feedback</span>
+              <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Powered by Gemini</span>
+            </div>
+
+            {/* Loading state — shown while server awaits Gemini */}
+            {aiFeedbackLoading && (
+              <div className="flex items-center gap-3 text-gray-500 text-sm">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                Analysing your session…
+              </div>
+            )}
+
+            {/* AI text — shown once aiFeedback arrives */}
+            {!aiFeedbackLoading && apiResult.aiFeedback && (
+              <p className="text-gray-700 text-sm leading-relaxed">{apiResult.aiFeedback}</p>
+            )}
+
+            {/* Fallback — if Gemini was unavailable */}
+            {!aiFeedbackLoading && !apiResult.aiFeedback && (
+              <p className="text-gray-400 text-sm italic">
+                AI coaching unavailable right now — check your joint feedback below for corrections.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
