@@ -374,6 +374,10 @@ export function extractAngles(lm) {
   for (const [name, [ai, bi, ci]] of Object.entries(JOINTS)) {
     if (vis(lm[ai], lm[bi], lm[ci])) {
       out[name] = Math.round(calculateAngle(lm[ai], lm[bi], lm[ci]));
+    } else {
+      // Explicitly mark as null so server can apply the missing-joint penalty.
+      // Never omit the key — absence vs null must be distinguishable.
+      out[name] = null;
     }
   }
   return out;

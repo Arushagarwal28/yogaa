@@ -71,11 +71,12 @@ TONE INSTRUCTION:
 ${toneInstruction}
 
 FORMAT RULES (strict):
-- Write exactly 3-4 sentences. No more.
+- Write exactly 3-4 complete sentences. Stop after the 4th sentence — do not continue.
 - No markdown, no bullet points, no headers, no asterisks.
 - Do NOT start with "That was", "Great", "Well done", or any generic opener if the score is below 50.
 - Name joints by their plain English name (e.g. "left shoulder", "right knee") — not camelCase.
-- End with one single actionable correction or tip.`;
+- End with one single actionable correction or tip.
+- Your entire response must be under 80 words.`;
 }
 
 /**
@@ -100,8 +101,8 @@ async function generateAIFeedback(sessionData) {
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature:     0.4,   // lower = more consistent, less "fluffy"
-          maxOutputTokens: 220,
+          temperature:     0.4,
+          maxOutputTokens: 600,   // 3-4 sentences safely fits in 600 tokens
           topP:            0.85,
         },
       }),
