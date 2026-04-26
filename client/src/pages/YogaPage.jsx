@@ -5,7 +5,7 @@ import Badge         from "../components/ui/Badge.jsx";
 import AvatarCanvas  from "../components/yoga/AvatarCanvas.jsx";
 import FeedbackPanel from "../components/yoga/FeedbackPanel.jsx";
 import { useSessionTimer }   from "../hooks/useSessionTimer.js";
-import { poseApi }           from "../utils/api.js";
+import { poseApi, sessionApi } from "../utils/api.js";
 import { useAuth }           from "../context/AuthContext.jsx";
 import {
   evaluateTadasana, evaluateVrikshasana, evaluateTrikonasana,
@@ -314,11 +314,25 @@ export default function YogaPage({ addCoins, refreshCoins }) {
   const [apiResult,         setApiResult]         = useState(null);
   const [submitting,        setSubmitting]        = useState(false);
   const [aiFeedbackLoading, setAiFeedbackLoading] = useState(false);
+  const [lastAttempt,       setLastAttempt]       = useState(null); // {score, date} of prev session on this pose
 
   const { elapsed, fmt } = useSessionTimer(isActive);
   const { step: cdStep, running: cdRunning, start: startCd, cancel: cancelCd } = useCountdown();
 
-  // ── Filtered pose list ──────────────────────────────────────────────
+  // ── Fetch last attempt for this pose (for delta display) ────────────
+  useEffect(() => {
+    if (!selectedPose) return;
+    setLastAttempt(null);
+    const apiName = POSE_API_NAME[selectedPose.id] || selectedPose.name;
+    sessionApi.getAll()
+      .then(({ sessions }) => {
+        const prev = sessions
+          .filter((s) => s.poseName === apiName)
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        if (prev.length) setLastAttempt({ score: prev[0].score, date: prev[0].date });
+      })
+      .catch(() => {}); // non-critical — delta just won't show
+  }, [selectedPose]);
   const filtered = YOGA_POSES.filter((p) => {
     const q = search.toLowerCase();
     return (
@@ -395,6 +409,7 @@ export default function YogaPage({ addCoins, refreshCoins }) {
     setApiResult(null);
     setLiveFeedback([]);
     setAiFeedbackLoading(false);
+    setLastAttempt(null);
   };
 
   // ─── Pose list page ─────────────────────────────────────────────────
@@ -498,64 +513,167 @@ export default function YogaPage({ addCoins, refreshCoins }) {
         </div>
       </div>
 
-      {/* Result banner + AI coaching */}
+      {/* ── Post-session summary modal ──────────────────────────────────── */}
       {apiResult && !sessionRunning && (
-        <div className="space-y-3">
-          {/* Score row */}
-          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-6 text-white flex items-center gap-6 flex-wrap">
-            <div className="text-center">
-              <div className="text-5xl font-black">{apiResult.score}%</div>
-              <div className="text-emerald-100 text-sm mt-1">Final Score</div>
-            </div>
-            <div className="flex-1 min-w-[160px]">
-              <div className="text-xl font-bold mb-1">
-                {apiResult.status === "excellent" ? "🏆 Excellent!" :
-                 apiResult.status === "good"      ? "👍 Good work!" :
-                 apiResult.status === "fair"      ? "👌 Keep practising!" : "💪 Keep going!"}
-              </div>
-              <div className="text-emerald-100 text-sm">
-                Duration: {Math.floor(elapsed / 60)}m {elapsed % 60}s · Coins earned: +{apiResult.coinsEarned} 🪙
-              </div>
-            </div>
-            <Btn
-              onClick={() => { setApiResult(null); setLiveFeedback([]); setAiFeedbackLoading(false); }}
-              className="bg-white !text-emerald-700 hover:bg-emerald-50 !shadow-none font-bold whitespace-nowrap"
-            >
-              Try Again
-            </Btn>
-          </div>
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+          <div className="modal-box bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
 
-          {/* AI Coaching card */}
-          <div className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🤖</span>
-              <span className="font-bold text-gray-800 text-sm">AI Coach Feedback</span>
-              <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Powered by Gemini</span>
-            </div>
+            {/* ── Header strip ───────────────────────────────────────────── */}
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-t-3xl px-6 pt-6 pb-8 text-white relative">
+              <p className="text-emerald-100 text-xs font-semibold uppercase tracking-widest mb-1">Session Complete</p>
+              <h3 className="text-xl font-bold">{selectedPose.name}</h3>
+              <p className="text-emerald-200 text-sm italic">{selectedPose.sanskrit}</p>
 
-            {/* Loading state — shown while server awaits Gemini */}
-            {aiFeedbackLoading && (
-              <div className="flex items-center gap-3 text-gray-500 text-sm">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+              {/* ── Score circle ─────────────────────────────────────────── */}
+              <div className="flex justify-center mt-4">
+                <div className="relative w-32 h-32">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                    {/* Track */}
+                    <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="10" />
+                    {/* Progress */}
+                    <circle cx="60" cy="60" r="52" fill="none"
+                      stroke="white" strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 52}`}
+                      strokeDashoffset={`${2 * Math.PI * 52 * (1 - apiResult.score / 100)}`}
+                      style={{ transition: "stroke-dashoffset 1s ease" }}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-black leading-none">{apiResult.score}%</span>
+                    <span className="text-emerald-100 text-xs mt-0.5">Score</span>
+                  </div>
                 </div>
-                Analysing your session…
               </div>
-            )}
 
-            {/* AI text — shown once aiFeedback arrives */}
-            {!aiFeedbackLoading && apiResult.aiFeedback && (
-              <p className="text-gray-700 text-sm leading-relaxed">{apiResult.aiFeedback}</p>
-            )}
+              {/* ── Status label + delta ──────────────────────────────────── */}
+              <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
+                <span className="text-lg font-bold">
+                  {apiResult.status === "excellent" ? "🏆 Excellent!" :
+                   apiResult.status === "good"      ? "👍 Good work!" :
+                   apiResult.status === "fair"      ? "👌 Keep practising!" : "💪 Keep going!"}
+                </span>
+                {lastAttempt && (() => {
+                  const delta = apiResult.score - lastAttempt.score;
+                  if (delta === 0) return null;
+                  return (
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${delta > 0 ? "bg-white/20 text-white" : "bg-red-400/40 text-white"}`}>
+                      {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}pts vs last
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
 
-            {/* Fallback — if Gemini was unavailable */}
-            {!aiFeedbackLoading && !apiResult.aiFeedback && (
-              <p className="text-gray-400 text-sm italic">
-                AI coaching unavailable right now — check your joint feedback below for corrections.
-              </p>
-            )}
+            {/* ── Stats row ──────────────────────────────────────────────── */}
+            <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+              {[
+                { label: "Duration", value: `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`, icon: "⏱" },
+                { label: "Coins earned", value: `+${apiResult.coinsEarned}`, icon: "🪙" },
+                { label: "Last attempt", value: lastAttempt ? `${lastAttempt.score}%` : "—", icon: "📅" },
+              ].map(({ label, value, icon }) => (
+                <div key={label} className="flex flex-col items-center py-4 px-3">
+                  <span className="text-lg mb-0.5">{icon}</span>
+                  <span className="text-base font-bold text-gray-800">{value}</span>
+                  <span className="text-xs text-gray-400">{label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+
+              {/* ── AI Coach Feedback ───────────────────────────────────── */}
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">🤖</span>
+                  <span className="font-bold text-gray-800 text-sm">AI Coach</span>
+                  <span className="ml-auto text-xs text-gray-400 bg-white px-2 py-0.5 rounded-full border border-gray-100">Gemini</span>
+                </div>
+                {aiFeedbackLoading ? (
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                    <span className="ml-1">Analysing your session…</span>
+                  </div>
+                ) : apiResult.aiFeedback ? (
+                  <p className="text-gray-700 text-sm leading-relaxed">{apiResult.aiFeedback}</p>
+                ) : (
+                  <p className="text-gray-400 text-sm italic">AI coaching unavailable — see joint breakdown below.</p>
+                )}
+              </div>
+
+              {/* ── Per-joint breakdown table ───────────────────────────── */}
+              {apiResult.feedback?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-bold text-gray-700 mb-2">Joint Breakdown</h4>
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                          <th className="text-left px-3 py-2 font-semibold">Joint</th>
+                          <th className="text-left px-3 py-2 font-semibold">Status</th>
+                          <th className="text-left px-3 py-2 font-semibold">Off by</th>
+                          <th className="text-left px-3 py-2 font-semibold">Correction</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {apiResult.feedback.map((f, i) => {
+                          const isRed    = f.status === "red";
+                          const isYellow = f.status === "yellow";
+                          const isMissing = f.missing;
+                          return (
+                            <tr key={i} className={isRed ? "bg-red-50/60" : isYellow ? "bg-amber-50/60" : ""}>
+                              <td className="px-3 py-2.5 font-medium text-gray-700 capitalize whitespace-nowrap">
+                                {f.joint.replace(/_/g, " ")}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${
+                                  isMissing ? "bg-gray-100 text-gray-500" :
+                                  isRed     ? "bg-red-100 text-red-600"   :
+                                              "bg-amber-100 text-amber-700"}`}>
+                                  {isMissing ? "👁 hidden" : isRed ? "🔴 needs work" : "🟡 close"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">
+                                {isMissing ? "—" : `${f.diff}°`}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-600 text-xs">{f.message}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ── All-green state ─────────────────────────────────────── */}
+              {(!apiResult.feedback || apiResult.feedback.length === 0) && (
+                <div className="text-center py-3 text-emerald-600 font-semibold text-sm">
+                  🎉 All joints within tolerance — perfect form!
+                </div>
+              )}
+
+              {/* ── Action buttons ──────────────────────────────────────── */}
+              <div className="flex gap-3 pt-1">
+                <Btn
+                  variant="secondary"
+                  onClick={handleBack}
+                  className="flex-1"
+                >
+                  ← Choose Pose
+                </Btn>
+                <Btn
+                  onClick={() => { setApiResult(null); setLiveFeedback([]); setAiFeedbackLoading(false); }}
+                  className="flex-1"
+                >
+                  🔄 Try Again
+                </Btn>
+              </div>
+
+            </div>
           </div>
         </div>
       )}
