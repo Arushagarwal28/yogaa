@@ -18,17 +18,35 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
+  /**
+   * register — calls POST /auth/register.
+   * Does NOT log the user in. The server creates an unverified account and
+   * sends an OTP email. The caller (AuthModal) should move to the OTP step.
+   * Returns { email, message } on success.
+   */
   const register = async (name, email, password, role) => {
-    const { token, user: u } = await authApi.register(name, email, password, role);
-    saveToken(token); setUser(u); setCoins(u.coins ?? 0);
+    return authApi.register(name, email, password, role);
+  };
+
+  /**
+   * verifyEmail — calls POST /auth/verify-email.
+   * On success the server returns { token, user } → log the user in.
+   */
+  const verifyEmail = async (email, otp) => {
+    const { token, user: u } = await authApi.verifyEmail(email, otp);
+    saveToken(token);
+    setUser(u);
+    setCoins(u.coins ?? 0);
   };
 
   const login = async (email, password) => {
     const { token, user: u } = await authApi.login(email, password);
-    saveToken(token); setUser(u); setCoins(u.coins ?? 0);
+    saveToken(token);
+    setUser(u);
+    setCoins(u.coins ?? 0);
   };
 
-  // Used by demo/guest login — reads actual coins from userData, no hardcoded value
+  // Demo / offline fallback — uses actual coins from userData
   const loginWithData = (userData) => {
     setUser(userData);
     setCoins(userData.coins ?? 0);
@@ -36,25 +54,20 @@ export function AuthProvider({ children }) {
 
   const logout = () => { clearToken(); setUser(null); setCoins(0); };
 
-  // Optimistic increment — called immediately when a session ends so the UI feels instant
   const addCoins = (n) => setCoins((c) => c + n);
 
-  // Re-fetch the authoritative coin count from the server.
-  // Call this after endSession to correct any drift between optimistic state and DB.
   const refreshCoins = useCallback(async () => {
     try {
       const { user: u } = await authApi.me();
       setCoins(u.coins ?? 0);
       setUser((prev) => (prev ? { ...prev, coins: u.coins ?? 0 } : prev));
-    } catch {
-      // Non-critical — the optimistic value from addCoins is still shown
-    }
+    } catch { /* silent */ }
   }, []);
 
   return (
     <AuthContext.Provider value={{
       user, coins, loading,
-      login, loginWithData, register, logout,
+      login, loginWithData, register, verifyEmail, logout,
       addCoins, refreshCoins,
     }}>
       {children}
